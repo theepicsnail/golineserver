@@ -1,18 +1,24 @@
 package main
 
+import "flag"
 import "time"
 import "fmt"
 import "net"
 import "bufio"
 
+var port = flag.Int("port", 1234, "port to listen on")
+var delimiter = flag.String("delimiter", "\n", "delimiter to split messages on")
+var timeout = flag.Int("timeout", 3000, "How long to wait on a client before killing it (Seconds)")
+
 type Server struct {
-	clients  []net.Conn
-	port     int
-	listener net.Listener
+	clients      []net.Conn
+	listener     net.Listener
+	delim        byte
+	writeTimeout time.Duration
 }
 
-func NewServer(port int) (*Server, error) {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func NewServer() (*Server, error) {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 
 	if err != nil {
 		return nil, err
@@ -20,8 +26,9 @@ func NewServer(port int) (*Server, error) {
 
 	return &Server{
 		[]net.Conn{},
-		port,
 		ln,
+		'\n',
+		time.Duration(*timeout) * time.Second,
 	}, nil
 }
 
@@ -49,7 +56,7 @@ func (server *Server) addClient(client net.Conn) {
 
 		reader := bufio.NewReader(client)
 		for {
-			line, err := reader.ReadString('\n')
+			line, err := reader.ReadString(server.delim)
 			if err != nil {
 				fmt.Println("ERR", client.RemoteAddr(), err)
 				return
@@ -81,7 +88,7 @@ func (server *Server) broadcast(data string) {
 	fmt.Println("Broadcasting", data)
 	for _, client := range server.clients {
 		fmt.Println("...to", client)
-		client.SetWriteDeadline(time.Now().Add(3 * time.Second))
+		client.SetWriteDeadline(time.Now().Add(server.writeTimeout))
 		written, err := client.Write([]byte(data))
 		if err != nil || dataLen != written {
 			defer server.removeClient(client)
@@ -91,7 +98,12 @@ func (server *Server) broadcast(data string) {
 }
 
 func main() {
-	server, err := NewServer(1234)
+	flag.Parse()
+	fmt.Printf("Port     =%v\n", *port)
+	fmt.Printf("Delimiter=%#v\n", *delimiter)
+	fmt.Printf("Timeout  =%v\n", *timeout)
+
+	server, err := NewServer()
 	if err != nil {
 		panic(err)
 	}
