@@ -6,6 +6,7 @@ import "fmt"
 import "net"
 import "bufio"
 
+var returnToSender = flag.Bool("return", true, "send messages back to the sender as well")
 var port = flag.Int("port", 1234, "port to listen on")
 var delimiter = flag.String("delimiter", "\n", "delimiter to split messages on")
 var timeout = flag.Int("timeout", 3000, "How long to wait on a client before killing it (Seconds)")
@@ -15,6 +16,7 @@ type Server struct {
 	listener     net.Listener
 	delim        byte
 	writeTimeout time.Duration
+  echoMessage  bool
 }
 
 func NewServer() (*Server, error) {
@@ -29,6 +31,7 @@ func NewServer() (*Server, error) {
 		ln,
 		'\n',
 		time.Duration(*timeout) * time.Second,
+    *returnToSender,
 	}, nil
 }
 
@@ -61,7 +64,7 @@ func (server *Server) addClient(client net.Conn) {
 				fmt.Println("ERR", client.RemoteAddr(), err)
 				return
 			}
-			server.broadcast(line)
+			server.broadcast(line, client)
 		}
 	}()
 }
@@ -83,10 +86,14 @@ func (server *Server) removeClient(client net.Conn) {
 	fmt.Println("Couldn't find client?")
 }
 
-func (server *Server) broadcast(data string) {
+func (server *Server) broadcast(data string, sender net.Conn) {
 	dataLen := len(data)
 	fmt.Println("Broadcasting", data)
 	for _, client := range server.clients {
+    if client == sender && ! server.echoMessage {
+      continue
+    }
+
 		fmt.Println("...to", client)
 		client.SetWriteDeadline(time.Now().Add(server.writeTimeout))
 		written, err := client.Write([]byte(data))
